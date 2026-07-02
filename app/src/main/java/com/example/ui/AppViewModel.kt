@@ -70,6 +70,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _githubPushError = MutableStateFlow<String?>(null)
     val githubPushError: StateFlow<String?> = _githubPushError.asStateFlow()
 
+    // Connection testing / Model fetching states
+    private val _connectionStatus = MutableStateFlow<String?>(null) // "testing", "success: ...", "error: ..."
+    val connectionStatus: StateFlow<String?> = _connectionStatus.asStateFlow()
+
     init {
         // Collect messages whenever selected project changes
         viewModelScope.launch {
@@ -152,15 +156,54 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _selectedProvider.value = providerId
     }
 
-    fun saveProviderKey(providerId: String, apiKey: String, baseUrl: String?, modelName: String?) {
+    fun saveProviderKey(providerId: String, apiKey: String, baseUrl: String?, modelName: String?, availableModels: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             val keyObj = ApiKey(
                 providerId = providerId,
                 apiKey = apiKey,
                 baseUrl = baseUrl,
-                selectedModel = modelName
+                selectedModel = modelName,
+                availableModels = availableModels
             )
             repository.saveApiKey(keyObj)
+        }
+    }
+
+    fun testConnectionAndFetchModels(providerId: String, apiKey: String, baseUrl: String?) {
+        _connectionStatus.value = "testing"
+        llmService.testConnectionAndFetchModels(providerId, apiKey, baseUrl) { success, message, models ->
+            viewModelScope.launch(Dispatchers.IO) {
+                if (success) {
+                    val modelsStr = models?.joinToString(",")
+                    val existing = repository.getApiKeyByProvider(providerId)
+                    val activeModel = existing?.selectedModel ?: models?.firstOrNull() ?: llmService.getDefaultModel(providerId)
+                    val keyObj = ApiKey(
+                        providerId = providerId,
+                        apiKey = apiKey,
+                        baseUrl = baseUrl,
+                        selectedModel = activeModel,
+                        availableModels = modelsStr
+                    )
+                    repository.saveApiKey(keyObj)
+                    _connectionStatus.value = "success: $message"
+                } else {
+                    _connectionStatus.value = "error: $message"
+                }
+            }
+        }
+    }
+
+    fun clearConnectionStatus() {
+        _connectionStatus.value = null
+    }
+
+    fun selectActiveModel(providerId: String, modelName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = repository.getApiKeyByProvider(providerId)
+            if (existing != null) {
+                val updated = existing.copy(selectedModel = modelName)
+                repository.saveApiKey(updated)
+            }
         }
     }
 

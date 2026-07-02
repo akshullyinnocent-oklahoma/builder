@@ -242,6 +242,50 @@ fun ChatBuilderScreen(
                 }
             }
 
+            // Quick Active Model Selector strip (Fetched Models)
+            val activeApiKey = apiKeys.find { it.providerId == selectedProvider }
+            val activeModels = remember(activeApiKey) {
+                activeApiKey?.availableModels?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+            }
+            val currentSelectedModel = activeApiKey?.selectedModel
+
+            if (activeModels.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background)
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Active Model:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(activeModels) { modelName ->
+                            val isModelSelected = currentSelectedModel == modelName
+                            FilterChip(
+                                selected = isModelSelected,
+                                onClick = { viewModel.selectActiveModel(selectedProvider, modelName) },
+                                label = { Text(modelName, fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
             // Gemini-style bottom text input card
             Surface(
                 modifier = Modifier.fillMaxWidth(),

@@ -33,6 +33,7 @@ fun ApiKeysScreen(
 ) {
     val apiKeys by viewModel.apiKeys.collectAsState()
     val selectedProvider by viewModel.selectedProvider.collectAsState()
+    val connectionStatus by viewModel.connectionStatus.collectAsState()
 
     var keyInput by remember { mutableStateOf("") }
     var urlInput by remember { mutableStateOf("") }
@@ -40,13 +41,18 @@ fun ApiKeysScreen(
     var showKey by remember { mutableStateOf(false) }
 
     val providers = listOf(
-        ProviderItem("google", "Google Gemini", "Official Google AI endpoint", "gemini-1.5-pro"),
-        ProviderItem("openrouter", "OpenRouter", "Unified LLM aggregator", "deepseek/deepseek-chat"),
-        ProviderItem("deepseek", "DeepSeek", "Official DeepSeek endpoint", "deepseek-chat"),
-        ProviderItem("nvidia", "Nvidia NIM", "High-performance Nvidia catalog", "meta/llama-3-70b-instruct"),
-        ProviderItem("mistral", "Mistral AI", "Official Mistral endpoints", "mistral-large-latest"),
-        ProviderItem("custom", "Custom Provider", "Any OpenAI-compatible API", "default-model")
+        ProviderItem("google", "Google Gemini", "Official Google AI endpoint"),
+        ProviderItem("openrouter", "OpenRouter", "Unified LLM aggregator"),
+        ProviderItem("deepseek", "DeepSeek", "Official DeepSeek endpoint"),
+        ProviderItem("nvidia", "Nvidia NIM", "High-performance Nvidia catalog"),
+        ProviderItem("mistral", "Mistral AI", "Official Mistral endpoints"),
+        ProviderItem("custom", "Custom Provider", "Any OpenAI-compatible API")
     )
+
+    // Clear connection status when switching provider
+    LaunchedEffect(selectedProvider) {
+        viewModel.clearConnectionStatus()
+    }
 
     // Sync input fields when selected provider changes
     LaunchedEffect(selectedProvider) {
@@ -110,7 +116,7 @@ fun ApiKeysScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Configure your own LLM API keys to build Android applications locally. We never store or upload your keys.",
+                            text = "Configure your own LLM API keys. Click 'Test & Fetch Models' to verify your connection and retrieve available models instantly.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White.copy(alpha = 0.85f)
                         )
@@ -161,6 +167,11 @@ fun ApiKeysScreen(
             // Key inputs card
             item {
                 val activeProvider = providers.first { it.id == selectedProvider }
+                val existing = apiKeys.find { it.providerId == selectedProvider }
+                val fetchedModels = remember(existing) {
+                    existing?.availableModels?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+                }
+
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -194,20 +205,6 @@ fun ApiKeysScreen(
                             Spacer(modifier = Modifier.height(12.dp))
                         }
 
-                        // Model name config (optional)
-                        OutlinedTextField(
-                            value = modelInput,
-                            onValueChange = { modelInput = it },
-                            label = { Text("Model Name (Default: ${activeProvider.defaultModel})") },
-                            placeholder = { Text(activeProvider.defaultModel) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("model_name_input"),
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-
                         // API Key input
                         OutlinedTextField(
                             value = keyInput,
@@ -228,6 +225,93 @@ fun ApiKeysScreen(
                                 }
                             }
                         )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Model name config (optional/manual)
+                        OutlinedTextField(
+                            value = modelInput,
+                            onValueChange = { modelInput = it },
+                            label = { Text("Active Model") },
+                            placeholder = { Text("Select from list or type name") },
+                            modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("model_name_input"),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+
+                        // Fetched model list chip selector
+                        if (fetchedModels.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Fetched Models (Tap to set active):",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(fetchedModels) { modelName ->
+                                    val isSelected = modelInput == modelName
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            modelInput = modelName
+                                            viewModel.selectActiveModel(selectedProvider, modelName)
+                                        },
+                                        label = { Text(modelName, fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Connection test status display
+                        if (connectionStatus != null) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            val status = connectionStatus!!
+                            when {
+                                status == "testing" -> {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Text("Testing connection & fetching models...", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                status.startsWith("success:") -> {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                        Text(
+                                            text = status.removePrefix("success:"),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Medium,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                                status.startsWith("error:") -> {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                        Text(
+                                            text = status.removePrefix("error:"),
+                                            color = MaterialTheme.colorScheme.error,
+                                            fontWeight = FontWeight.Medium,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(20.dp))
 
@@ -235,14 +319,14 @@ fun ApiKeysScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val isSaved = apiKeys.any { it.providerId == selectedProvider }
-                            if (isSaved) {
+                            if (existing != null) {
                                 OutlinedButton(
                                     onClick = {
                                         viewModel.deleteProviderKey(selectedProvider)
                                         keyInput = ""
                                         urlInput = ""
                                         modelInput = ""
+                                        viewModel.clearConnectionStatus()
                                     },
                                     colors = ButtonDefaults.outlinedButtonColors(
                                         contentColor = MaterialTheme.colorScheme.error
@@ -261,24 +345,50 @@ fun ApiKeysScreen(
                             Button(
                                 onClick = {
                                     if (keyInput.isNotEmpty()) {
-                                        val finalModel = if (modelInput.trim().isEmpty()) activeProvider.defaultModel else modelInput.trim()
+                                        viewModel.testConnectionAndFetchModels(
+                                            providerId = selectedProvider,
+                                            apiKey = keyInput.trim(),
+                                            baseUrl = if (selectedProvider == "custom") urlInput.trim() else null
+                                        )
+                                    }
+                                },
+                                enabled = keyInput.isNotEmpty() && connectionStatus != "testing",
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .testTag("test_key_button")
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Test & Fetch")
+                            }
+
+                            Button(
+                                onClick = {
+                                    if (keyInput.isNotEmpty()) {
+                                        val finalModel = modelInput.trim()
                                         viewModel.saveProviderKey(
                                             providerId = selectedProvider,
                                             apiKey = keyInput.trim(),
                                             baseUrl = if (selectedProvider == "custom") urlInput.trim() else null,
-                                            modelName = finalModel
+                                            modelName = if (finalModel.isEmpty()) null else finalModel,
+                                            availableModels = existing?.availableModels
                                         )
                                     }
                                 },
                                 enabled = keyInput.isNotEmpty(),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
-                                    .weight(1.5f)
+                                    .weight(1.2f)
                                     .testTag("save_key_button")
                             ) {
                                 Icon(Icons.Default.Save, contentDescription = null)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Save Configuration")
+                                Text("Save Key")
                             }
                         }
                     }
@@ -311,7 +421,7 @@ fun ApiKeysScreen(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
-                                    Icons.Default.KeyOff,
+                                    Icons.Default.Lock,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(40.dp)
@@ -355,7 +465,7 @@ fun ApiKeysScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(provItem.name, fontWeight = FontWeight.Bold)
                                 Text(
-                                    text = "Model: ${key.selectedModel ?: provItem.defaultModel}",
+                                    text = "Model: ${key.selectedModel ?: "None Selected"}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -457,6 +567,5 @@ fun ProviderBadge(
 data class ProviderItem(
     val id: String,
     val name: String,
-    val description: String,
-    val defaultModel: String
+    val description: String
 )

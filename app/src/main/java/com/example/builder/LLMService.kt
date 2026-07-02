@@ -65,7 +65,8 @@ class LLMService {
         messages: List<ChatMessage>,
         callback: Callback
     ) {
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+        val cleanModel = model.trim().removePrefix("models/")
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$cleanModel:generateContent?key=$apiKey"
 
         try {
             val jsonBody = JSONObject()
@@ -213,9 +214,91 @@ class LLMService {
         }
     }
 
+    fun testConnectionAndFetchModels(
+        provider: String,
+        apiKey: String,
+        customBaseUrl: String?,
+        callback: (success: Boolean, message: String, models: List<String>?) -> Unit
+    ) {
+        val url = if (provider == "google") {
+            "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+        } else {
+            val baseUrl = when (provider) {
+                "openrouter" -> "https://openrouter.ai/api/v1"
+                "deepseek" -> "https://api.deepseek.com/v1"
+                "mistral" -> "https://api.mistral.ai/v1"
+                "nvidia" -> "https://integrate.api.nvidia.com/v1"
+                "custom" -> customBaseUrl ?: ""
+                else -> ""
+            }
+            if (baseUrl.isEmpty()) {
+                callback(false, "Base URL is empty.", null)
+                return
+            }
+            if (baseUrl.endsWith("/")) "${baseUrl}models" else "$baseUrl/models"
+        }
+
+        val requestBuilder = Request.Builder().url(url)
+        if (provider != "google") {
+            requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+        }
+        val request = requestBuilder.build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: Call, e: java.io.IOException) {
+                callback(false, e.message ?: "Network error", null)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    val bodyString = it.body?.string()
+                    if (it.isSuccessful && bodyString != null) {
+                        try {
+                            val modelsList = mutableListOf<String>()
+                            if (provider == "google") {
+                                val root = JSONObject(bodyString)
+                                val modelsArray = root.optJSONArray("models")
+                                if (modelsArray != null) {
+                                    for (i in 0 until modelsArray.length()) {
+                                        val mObj = modelsArray.getJSONObject(i)
+                                        val name = mObj.optString("name")
+                                        if (name.isNotEmpty()) {
+                                            modelsList.add(name.removePrefix("models/"))
+                                        }
+                                    }
+                                }
+                            } else {
+                                val root = JSONObject(bodyString)
+                                val dataArray = root.optJSONArray("data")
+                                if (dataArray != null) {
+                                    for (i in 0 until dataArray.length()) {
+                                        val mObj = dataArray.getJSONObject(i)
+                                        val id = mObj.optString("id")
+                                        if (id.isNotEmpty()) {
+                                            modelsList.add(id)
+                                        }
+                                    }
+                                }
+                            }
+                            if (modelsList.isEmpty()) {
+                                callback(true, "Connection successful, but no models were returned.", emptyList())
+                            } else {
+                                callback(true, "Connection successful! Fetched ${modelsList.size} models.", modelsList)
+                            }
+                        } catch (e: Exception) {
+                            callback(false, "Failed to parse models response: ${e.message}\nResponse: $bodyString", null)
+                        }
+                    } else {
+                        callback(false, "API Error (Code ${it.code}): ${bodyString ?: "Empty body"}", null)
+                    }
+                }
+            }
+        })
+    }
+
     fun getDefaultModel(provider: String): String {
         return when (provider) {
-            "google" -> "gemini-1.5-pro"
+            "google" -> "gemini-2.5-flash"
             "openrouter" -> "deepseek/deepseek-chat"
             "deepseek" -> "deepseek-chat"
             "mistral" -> "mistral-large-latest"

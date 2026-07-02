@@ -8,5 +8,6 @@ data class ApiKey(
     @PrimaryKey val providerId: String, // "google", "openrouter", "nvidia", "deepseek", "mistral", "custom"
     val apiKey: String,
     val baseUrl: String? = null,
-    val selectedModel: String? = null
+    val selectedModel: String? = null,
+    val availableModels: String? = null
 )
