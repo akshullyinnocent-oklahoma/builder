@@ -1,0 +1,16 @@
+# Treat all jar files as binary to prevent corruption during git checkout and line-ending conversions
+*.jar binary
+
+# Treat keystores as binary
+*.keystore binary
+
+# Ensure gradlew and other shell scripts keep LF line endings and are executable
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Treat images as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
