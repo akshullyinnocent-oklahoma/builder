@@ -1,0 +1,6 @@
+{
+  "name": "AI App Builder",
+  "description": "A native BYOK (Bring Your Own Key) AI-powered Android app builder that runs on multiple LLM providers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
